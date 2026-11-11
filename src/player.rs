@@ -1,17 +1,13 @@
 use std::sync::Arc;
-#[cfg(feature = "js")]
 use std::time::Duration;
 
-use anyhow::Result;
-#[cfg(feature = "js")]
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
+use anyhow::{Result, bail};
 use serde_json::Value;
-#[cfg(feature = "js")]
 use serde_json::json;
 
 use crate::client::YtMusic;
 use crate::context::Client;
-#[cfg(feature = "js")]
 use crate::context::random_string;
 use crate::models::AudioFormat;
 use crate::stream::AudioStream;
@@ -47,6 +43,64 @@ impl Playability {
 
     pub fn gated(&self) -> bool {
         self.status == "LOGIN_REQUIRED"
+    }
+}
+
+// The guest client's audio urls need no deciphering, so they work in a build
+// without the javascript runtime.
+impl YtMusic {
+    #[cfg_attr(not(feature = "js"), allow(dead_code))]
+    async fn serves(&self, format: &AudioFormat) -> bool {
+        match range(&self.http, &format.url, format.user_agent, 0, 0).await {
+            Ok(_) => true,
+            Err(error) => {
+                log::debug!(
+                    "player: itag {} is not being served: {error:#}",
+                    format.itag
+                );
+                false
+            }
+        }
+    }
+
+    async fn guest_audio(&self, video_id: &str) -> Result<AudioFormat> {
+        let response = self.guest_player(video_id).await?;
+        let audio = playable(&response, video_id)?
+            .iter()
+            .filter_map(|format| audio_format(format, Client::VisionOs))
+            .collect();
+        pick(audio).with_context(|| format!("no direct audio stream for {video_id}"))
+    }
+
+    async fn guest_player(&self, video_id: &str) -> Result<Value> {
+        let response = self.guest_request(video_id, None).await?;
+        if playability(&response).status != "LOGIN_REQUIRED" {
+            return Ok(response);
+        }
+        let Some(issued) = response
+            .pointer("/responseContext/visitorData")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+        else {
+            return Ok(response);
+        };
+        log::debug!("player: the stream visitor was refused, priming a fresh one");
+        self.adopt_visitor(issued.clone()).await;
+        self.guest_request(video_id, Some(&issued)).await
+    }
+
+    async fn guest_request(&self, video_id: &str, guest: Option<&str>) -> Result<Value> {
+        let payload = json!({
+            "videoId": video_id,
+            "contentCheckOk": true,
+            "racyCheckOk": true,
+            "cpn": random_string(16),
+            "playbackContext": {
+                "contentPlaybackContext": { "html5Preference": "HTML5_PREF_WANTS" }
+            },
+        });
+        self.execute_visiting("player", Client::VisionOs, payload, false, guest)
+            .await
     }
 }
 
@@ -153,19 +207,6 @@ impl YtMusic {
     }
 
     /// Whether the stream host will serve this url, asked with the smallest range there is.
-    async fn serves(&self, format: &AudioFormat) -> bool {
-        match range(&self.http, &format.url, format.user_agent, 0, 0).await {
-            Ok(_) => true,
-            Err(error) => {
-                log::debug!(
-                    "player: itag {} is not being served: {error:#}",
-                    format.itag
-                );
-                false
-            }
-        }
-    }
-
     pub async fn load_audio(&self, video_id: &str) -> Result<(AudioFormat, Vec<u8>)> {
         let started = std::time::Instant::now();
         let format = self.best_audio(video_id).await?;
@@ -176,15 +217,6 @@ impl YtMusic {
             started.elapsed()
         );
         Ok((format, data))
-    }
-
-    async fn guest_audio(&self, video_id: &str) -> Result<AudioFormat> {
-        let response = self.guest_player(video_id).await?;
-        let audio = playable(&response, video_id)?
-            .iter()
-            .filter_map(|format| audio_format(format, Client::VisionOs))
-            .collect();
-        pick(audio).with_context(|| format!("no direct audio stream for {video_id}"))
     }
 
     async fn signed_audio(&self, video_id: &str) -> Result<AudioFormat> {
@@ -248,37 +280,6 @@ impl YtMusic {
         })
     }
 
-    async fn guest_player(&self, video_id: &str) -> Result<Value> {
-        let response = self.guest_request(video_id, None).await?;
-        if playability(&response).status != "LOGIN_REQUIRED" {
-            return Ok(response);
-        }
-        let Some(issued) = response
-            .pointer("/responseContext/visitorData")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-        else {
-            return Ok(response);
-        };
-        log::debug!("player: the stream visitor was refused, priming a fresh one");
-        self.adopt_visitor(issued.clone()).await;
-        self.guest_request(video_id, Some(&issued)).await
-    }
-
-    async fn guest_request(&self, video_id: &str, guest: Option<&str>) -> Result<Value> {
-        let payload = json!({
-            "videoId": video_id,
-            "contentCheckOk": true,
-            "racyCheckOk": true,
-            "cpn": random_string(16),
-            "playbackContext": {
-                "contentPlaybackContext": { "html5Preference": "HTML5_PREF_WANTS" }
-            },
-        });
-        self.execute_visiting("player", Client::VisionOs, payload, false, guest)
-            .await
-    }
-
     pub async fn download(&self, format: &AudioFormat) -> Result<Vec<u8>> {
         let Some(total) = format.content_length else {
             return self.download_serial(format).await;
@@ -339,8 +340,8 @@ impl YtMusic {
         anyhow::bail!("this build cannot sign player requests")
     }
 
-    pub async fn best_audio(&self, _video_id: &str) -> Result<AudioFormat> {
-        anyhow::bail!("this build cannot sign player requests")
+    pub async fn best_audio(&self, video_id: &str) -> Result<AudioFormat> {
+        self.guest_audio(video_id).await
     }
 
     pub async fn open_audio(
@@ -358,12 +359,11 @@ impl YtMusic {
         anyhow::bail!("this build cannot sign player requests")
     }
 
-    pub(crate) async fn renewed_audio(&self, _video_id: &str, _itag: u32) -> Result<AudioFormat> {
-        anyhow::bail!("this build cannot sign player requests")
+    pub(crate) async fn renewed_audio(&self, video_id: &str, _itag: u32) -> Result<AudioFormat> {
+        self.guest_audio(video_id).await
     }
 }
 
-#[cfg(feature = "js")]
 async fn range(
     http: &reqwest::Client,
     url: &str,
@@ -523,7 +523,6 @@ fn prefer_aac(formats: Vec<Ciphered>) -> Option<Ciphered> {
     }
 }
 
-#[cfg(feature = "js")]
 fn playable<'a>(response: &'a Value, video_id: &str) -> Result<&'a Vec<Value>> {
     let playability = playability(response);
     if !playability.ok() {
@@ -553,7 +552,7 @@ fn playable<'a>(response: &'a Value, video_id: &str) -> Result<&'a Vec<Value>> {
     }
 }
 
-#[cfg(feature = "js")]
+#[cfg_attr(not(feature = "js"), allow(dead_code))]
 fn describe(format: &AudioFormat, bytes: usize) -> String {
     format!(
         "itag {} {} {} kbps, {:.1} MiB",
@@ -564,7 +563,6 @@ fn describe(format: &AudioFormat, bytes: usize) -> String {
     )
 }
 
-#[cfg(feature = "js")]
 fn pick(formats: Vec<AudioFormat>) -> Option<AudioFormat> {
     let aac = formats
         .iter()
@@ -574,7 +572,6 @@ fn pick(formats: Vec<AudioFormat>) -> Option<AudioFormat> {
     aac.or_else(|| formats.into_iter().max_by_key(|format| format.bitrate))
 }
 
-#[cfg(feature = "js")]
 fn playability(response: &Value) -> Playability {
     let status = response
         .get("playabilityStatus")
@@ -593,7 +590,6 @@ fn playability(response: &Value) -> Playability {
     }
 }
 
-#[cfg(feature = "js")]
 fn audio_format(format: &Value, client: Client) -> Option<AudioFormat> {
     let mime = format.get("mimeType").and_then(Value::as_str)?;
     if !mime.starts_with("audio/") {

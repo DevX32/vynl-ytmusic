@@ -343,7 +343,6 @@ impl YtMusic {
         }
     }
 
-    #[cfg(feature = "js")]
     pub(crate) async fn adopt_visitor(&self, issued: String) {
         *self.visitor.write().await = Some(issued);
     }
