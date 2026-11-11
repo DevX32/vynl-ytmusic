@@ -7,7 +7,9 @@
 //! a cold start token gets after its first megabyte or so, is renewed with a minted token and
 //! read on from the same byte.
 
-use std::sync::{Arc, Weak};
+#[cfg(feature = "js")]
+use std::sync::Arc;
+use std::sync::Weak;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
@@ -71,6 +73,7 @@ impl AudioStream {
     }
 
     /// Lets the stream renew its url through `client` when the host refuses it partway through.
+    #[cfg(feature = "js")]
     pub(crate) fn renewing(mut self, client: &Arc<YtMusic>, video_id: &str, itag: u32) -> Self {
         self.renewal = Some(Renewal {
             client: Arc::downgrade(client),

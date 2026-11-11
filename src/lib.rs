@@ -2,6 +2,7 @@ pub mod browse;
 pub mod client;
 pub mod context;
 pub mod dedup;
+#[cfg(feature = "js")]
 pub mod deobf;
 pub mod library;
 pub mod models;

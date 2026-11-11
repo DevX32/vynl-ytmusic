@@ -6,6 +6,10 @@ license = "GPL-3.0-or-later"
 description = "YouTube Music InnerTube client"
 
 [features]
+default = ["js"]
+# The javascript runtime signs player requests. Browsing and searching do not
+# need it, so a build without it stays small and needs no javascript engine.
+js = ["dep:rquickjs"]
 bundled-sqlite = []
 
 [dependencies]
@@ -23,7 +27,7 @@ serde_json = "1"
 sha1 = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs"] }
 regex-lite = "0.1"
-rquickjs = "0.12"
+rquickjs = { version = "0.12", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11"

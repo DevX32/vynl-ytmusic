@@ -26,8 +26,10 @@ const PATIENCE: Duration = Duration::from_secs(5);
 /// How long a stream the host stopped serving waits for a minted token. A cold start token is
 /// refused after about a minute of audio, which the player still has buffered, so this can be
 /// long enough for a minter to open its page and attest.
+#[cfg(feature = "js")]
 const AWAIT: Duration = Duration::from_secs(40);
 /// How often the minter is asked again while a stream waits on it.
+#[cfg(feature = "js")]
 const POLL: Duration = Duration::from_secs(1);
 /// The first byte of a cold start token, a protobuf field tag the server expects.
 const TAG: u8 = 34;
@@ -83,6 +85,7 @@ impl PoTokens {
 
     /// A minted token for `binding`, asking the minter every [`POLL`] for up to [`AWAIT`].
     /// Never answers a cold start token, and answers `None` at once when there is no minter.
+    #[cfg(feature = "js")]
     pub(crate) async fn await_minted(&self, binding: &str) -> Option<String> {
         self.minter.as_ref()?;
         let deadline = Instant::now() + AWAIT;

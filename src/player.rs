@@ -1,16 +1,26 @@
 use std::sync::Arc;
+#[cfg(feature = "js")]
 use std::time::Duration;
 
-use anyhow::{Context as _, Result, bail};
-use serde_json::{Value, json};
+use anyhow::Result;
+#[cfg(feature = "js")]
+use anyhow::{Context as _, bail};
+use serde_json::Value;
+#[cfg(feature = "js")]
+use serde_json::json;
 
 use crate::client::YtMusic;
-use crate::context::{Client, random_string};
+use crate::context::Client;
+#[cfg(feature = "js")]
+use crate::context::random_string;
 use crate::models::AudioFormat;
 use crate::stream::AudioStream;
 
+#[cfg(feature = "js")]
 const CHUNK: u64 = 1024 * 1024;
+#[cfg(feature = "js")]
 const PARALLEL: usize = 4;
+#[cfg(feature = "js")]
 const MAX_STREAM_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug)]
@@ -40,6 +50,7 @@ impl Playability {
     }
 }
 
+#[cfg(feature = "js")]
 impl YtMusic {
     pub async fn player_response(&self, video_id: &str, client: Client) -> Result<Value> {
         let payload = json!({
@@ -320,6 +331,39 @@ impl YtMusic {
     }
 }
 
+#[cfg(not(feature = "js"))]
+impl YtMusic {
+    /// This build has no javascript runtime, so it cannot sign player requests.
+    /// Browsing and searching still work.
+    pub async fn player_response(&self, _video_id: &str, _client: Client) -> Result<Value> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+
+    pub async fn best_audio(&self, _video_id: &str) -> Result<AudioFormat> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+
+    pub async fn open_audio(
+        self: &Arc<Self>,
+        _video_id: &str,
+    ) -> Result<(AudioFormat, AudioStream)> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+
+    pub async fn load_audio(&self, _video_id: &str) -> Result<(AudioFormat, Vec<u8>)> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+
+    pub async fn download(&self, _format: &AudioFormat) -> Result<Vec<u8>> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+
+    pub(crate) async fn renewed_audio(&self, _video_id: &str, _itag: u32) -> Result<AudioFormat> {
+        anyhow::bail!("this build cannot sign player requests")
+    }
+}
+
+#[cfg(feature = "js")]
 async fn range(
     http: &reqwest::Client,
     url: &str,
@@ -332,6 +376,7 @@ async fn range(
     Ok(chunk.to_vec())
 }
 
+#[cfg(feature = "js")]
 struct Ciphered {
     itag: u32,
     mime: String,
@@ -344,6 +389,7 @@ struct Ciphered {
     signature: Option<(String, String)>,
 }
 
+#[cfg(feature = "js")]
 fn ciphered(format: &Value) -> Option<Ciphered> {
     let mime = format.get("mimeType").and_then(Value::as_str)?;
     if !mime.starts_with("audio/") {
@@ -386,6 +432,7 @@ fn ciphered(format: &Value) -> Option<Ciphered> {
     })
 }
 
+#[cfg(feature = "js")]
 async fn decipher(solver: &crate::deobf::Solver, format: &Ciphered) -> Result<String> {
     let mut url = reqwest::Url::parse(&format.url).context("the stream url does not parse")?;
     let throttle = param(&url, "n");
@@ -422,6 +469,7 @@ async fn decipher(solver: &crate::deobf::Solver, format: &Ciphered) -> Result<St
 /// Adds the proof-of-origin parameter the stream host asks for, leaving a url that already
 /// carries one alone. An empty token, or a url that does not parse, is handed back untouched,
 /// so a token can never be the reason a stream fails to load.
+#[cfg(feature = "js")]
 fn with_pot(url: &str, token: &str) -> String {
     if token.is_empty() {
         return url.to_string();
@@ -434,12 +482,14 @@ fn with_pot(url: &str, token: &str) -> String {
     parsed.to_string()
 }
 
+#[cfg(feature = "js")]
 fn param(url: &reqwest::Url, key: &str) -> Option<String> {
     url.query_pairs()
         .find(|(name, _)| name == key)
         .map(|(_, value)| value.into_owned())
 }
 
+#[cfg(feature = "js")]
 fn set_params(url: &mut reqwest::Url, changes: &[(&str, &str)]) {
     let existing: Vec<(String, String)> = url
         .query_pairs()
@@ -461,6 +511,7 @@ fn set_params(url: &mut reqwest::Url, changes: &[(&str, &str)]) {
     query.finish();
 }
 
+#[cfg(feature = "js")]
 fn prefer_aac(formats: Vec<Ciphered>) -> Option<Ciphered> {
     let aac = formats
         .iter()
@@ -472,6 +523,7 @@ fn prefer_aac(formats: Vec<Ciphered>) -> Option<Ciphered> {
     }
 }
 
+#[cfg(feature = "js")]
 fn playable<'a>(response: &'a Value, video_id: &str) -> Result<&'a Vec<Value>> {
     let playability = playability(response);
     if !playability.ok() {
@@ -501,6 +553,7 @@ fn playable<'a>(response: &'a Value, video_id: &str) -> Result<&'a Vec<Value>> {
     }
 }
 
+#[cfg(feature = "js")]
 fn describe(format: &AudioFormat, bytes: usize) -> String {
     format!(
         "itag {} {} {} kbps, {:.1} MiB",
@@ -511,6 +564,7 @@ fn describe(format: &AudioFormat, bytes: usize) -> String {
     )
 }
 
+#[cfg(feature = "js")]
 fn pick(formats: Vec<AudioFormat>) -> Option<AudioFormat> {
     let aac = formats
         .iter()
@@ -520,6 +574,7 @@ fn pick(formats: Vec<AudioFormat>) -> Option<AudioFormat> {
     aac.or_else(|| formats.into_iter().max_by_key(|format| format.bitrate))
 }
 
+#[cfg(feature = "js")]
 fn playability(response: &Value) -> Playability {
     let status = response
         .get("playabilityStatus")
@@ -538,6 +593,7 @@ fn playability(response: &Value) -> Playability {
     }
 }
 
+#[cfg(feature = "js")]
 fn audio_format(format: &Value, client: Client) -> Option<AudioFormat> {
     let mime = format.get("mimeType").and_then(Value::as_str)?;
     if !mime.starts_with("audio/") {

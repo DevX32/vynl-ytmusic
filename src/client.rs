@@ -15,6 +15,8 @@ const API_BASE: &str = "https://www.youtube.com/youtubei/v1/";
 const MUSIC_API_BASE: &str = "https://music.youtube.com/youtubei/v1/";
 const VISITOR_URL: &str = "https://www.youtube.com/sw.js_data";
 /// Where the signed-in account's data sync id is published.
+#[cfg(feature = "js")]
+#[cfg(feature = "js")]
 const HOME_URL: &str = "https://www.youtube.com/";
 /// The url a pasted cookie is stored against. A `youtube.com` domain cookie stored here
 /// also matches `www.youtube.com`.
@@ -35,6 +37,7 @@ const ROTATE_BODY: &str = r#"[000,"-0000000000000000000"]"#;
 pub struct YtMusic {
     pub(crate) http: reqwest::Client,
     visitor: RwLock<Option<String>>,
+    #[cfg(feature = "js")]
     solver: RwLock<Option<std::sync::Arc<crate::deobf::Solver>>>,
     player_cache: Option<PathBuf>,
     authed: Option<Authed>,
@@ -44,6 +47,7 @@ pub struct YtMusic {
     pub(crate) po_tokens: crate::potoken::PoTokens,
     /// The account's data sync id, once it has been looked for. The inner `None` records a
     /// look that found nothing, so a signed-in run asks Google for it exactly once.
+    #[cfg(feature = "js")]
     data_sync: RwLock<Option<Option<String>>>,
     hl: String,
     gl: String,
@@ -81,6 +85,7 @@ impl YtMusic {
         Self {
             http: reqwest::Client::new(),
             visitor: RwLock::new(None),
+            #[cfg(feature = "js")]
             solver: RwLock::new(None),
             player_cache: None,
             authed: None,
@@ -88,6 +93,7 @@ impl YtMusic {
             page_id: None,
             resolve_cache: crate::dedup::ResolveCache::memory(),
             po_tokens: crate::potoken::PoTokens::default(),
+            #[cfg(feature = "js")]
             data_sync: RwLock::new(None),
             hl: "en".to_string(),
             gl: "US".to_string(),
@@ -294,6 +300,7 @@ impl YtMusic {
         &self.http
     }
 
+    #[cfg(feature = "js")]
     pub(crate) async fn solver(&self) -> Result<std::sync::Arc<crate::deobf::Solver>> {
         if let Some(ready) = self.solver.read().await.clone() {
             return Ok(ready);
@@ -336,6 +343,7 @@ impl YtMusic {
         }
     }
 
+    #[cfg(feature = "js")]
     pub(crate) async fn adopt_visitor(&self, issued: String) {
         *self.visitor.write().await = Some(issued);
     }
@@ -344,6 +352,7 @@ impl YtMusic {
     /// when the cookies name one, and the visitor id otherwise. YouTube refuses a token bound
     /// to anything else, so a signed-in run that cannot read its data sync id sends nothing
     /// rather than a token for the wrong identity.
+    #[cfg(feature = "js")]
     pub(crate) async fn session_binding(&self) -> Option<String> {
         match self.is_authenticated() {
             true => self.data_sync_id().await,
@@ -353,6 +362,7 @@ impl YtMusic {
 
     /// The account's data sync id, read once out of the signed-in home page and kept for the
     /// life of the client. It changes only when the account does, and a client signs in once.
+    #[cfg(feature = "js")]
     async fn data_sync_id(&self) -> Option<String> {
         if let Some(ready) = self.data_sync.read().await.clone() {
             return ready;
@@ -403,6 +413,7 @@ async fn fetch_visitor(http: &reqwest::Client) -> Result<String> {
 /// Reads `DATASYNC_ID` off the signed-in home page, which is the only place Google publishes
 /// it. A brand account carries it as `delegated||user`; both halves belong to the binding, so
 /// the value is taken whole.
+#[cfg(feature = "js")]
 async fn fetch_data_sync_id(api: &YtMusic) -> Result<String> {
     let authed = api
         .authed
