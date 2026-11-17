@@ -48,7 +48,7 @@ impl YtMusic {
             .iter()
             .filter_map(|run| run.str_at(&["text"]))
             .find_map(parse::count_from_text);
-        let thumbnails = parse::thumbnails(header);
+        let thumbnails = parse::header_thumbnails(header);
         let playlist_id = playlist_id_of(header);
         let description = parse::find_renderer(header, "musicDescriptionShelfRenderer")
             .and_then(|shelf| shelf.run_text(&["description"]))
@@ -163,7 +163,7 @@ impl YtMusic {
             name,
             description,
             subscribers,
-            thumbnails: parse::thumbnails(header),
+            thumbnails: parse::header_thumbnails(header),
             top_tracks,
             albums,
             singles,
@@ -264,7 +264,7 @@ impl YtMusic {
             .iter()
             .filter_map(|run| run.str_at(&["text"]))
             .find_map(parse::count_from_text);
-        let thumbnails = parse::thumbnails(header);
+        let thumbnails = parse::header_thumbnails(header);
 
         let mut tracks = Vec::new();
         collect_list_tracks(&response, &mut tracks);

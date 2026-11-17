@@ -9,12 +9,7 @@ const GREY_OUT: &str = "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT";
 const ALBUM_PAGE: &str = "MUSIC_PAGE_TYPE_ALBUM";
 const PLAYLIST_PAGE: &str = "MUSIC_PAGE_TYPE_PLAYLIST";
 
-pub fn thumbnails(node: &Value) -> Vec<Thumbnail> {
-    let mut found = Vec::new();
-    find_all(node, "thumbnails", &mut found);
-    let Some(list) = found.first().and_then(|value| value.as_array()) else {
-        return Vec::new();
-    };
+fn thumbnails_from_list(list: &[Value]) -> Vec<Thumbnail> {
     let mut thumbs: Vec<Thumbnail> = list
         .iter()
         .filter_map(|thumb| {
@@ -27,6 +22,28 @@ pub fn thumbnails(node: &Value) -> Vec<Thumbnail> {
         .collect();
     thumbs.sort_by_key(|thumb| thumb.width);
     thumbs
+}
+
+pub fn thumbnails(node: &Value) -> Vec<Thumbnail> {
+    let mut found = Vec::new();
+    find_all(node, "thumbnails", &mut found);
+    let Some(list) = found.first().and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+    thumbnails_from_list(list)
+}
+
+/// The artwork of a `*HeaderRenderer`: its own `thumbnail` renderer, not any other nested
+/// thumbnails source (e.g. the artist's strapline image, which happens to come first when
+/// the JSON object is iterated in key order). Falls back to a generic search if absent.
+pub fn header_thumbnails(header: &Value) -> Vec<Thumbnail> {
+    match header
+        .at(&["thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"])
+        .and_then(Value::as_array)
+    {
+        Some(list) => thumbnails_from_list(list),
+        None => thumbnails(header),
+    }
 }
 
 pub fn runs_text(node: &Value) -> Option<String> {
